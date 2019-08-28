@@ -17,6 +17,7 @@ use dolphiq\sitemap\Sitemap;
 use Craft;
 use craft\db\Query;
 use craft\web\Controller;
+use craft\elements\Entry;
 
 /**
  * Default Controller
@@ -100,7 +101,7 @@ class SettingsController extends Controller
 
 
     private function getCurrentRevision($categoryId) {
-        $entries = \craft\elements\Entry::find()->sectionId($categoryId)->all();
+        $entries = Entry::find()->sectionId($categoryId)->all();
         $currentEntries = [];
 
         foreach ($entries as $entry) {
