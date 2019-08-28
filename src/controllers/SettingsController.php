@@ -10,6 +10,7 @@
 
 namespace dolphiq\sitemap\controllers;
 
+use dolphiq\sitemap\models\SitemapEntryModel;
 use dolphiq\sitemap\records\SitemapEntry;
 use dolphiq\sitemap\Sitemap;
 
@@ -97,6 +98,25 @@ class SettingsController extends Controller
             ->orderBy(['name' => SORT_ASC]);
     }
 
+
+    private function getCurrentRevision($categoryId) {
+        $entries = \craft\elements\Entry::find()->sectionId($categoryId)->all();
+        $currentEntries = [];
+
+        foreach ($entries as $entry) {
+            
+            // Find the current revision
+            if ($currentRevision = $entry->currentRevision) {
+                array_push($currentEntries, $currentRevision->id);
+            } else {
+                // This must be the current one
+                array_push($currentEntries, $entry->id);
+            }
+        }
+       
+        return $currentEntries;
+    }
+
 // Public Methods
 // =========================================================================
 
@@ -121,12 +141,14 @@ class SettingsController extends Controller
 
         if (is_array($allSections)) {
             foreach ($allSections as $section) {
+                $entries = $this->getCurrentRevision($section['id']);
+
                 $allStructures[] = [
                     'id' => $section['id'],
                     'type' => $section['type'],
                     'heading' => $section['name'],
                     'enabled' => ($section['sitemapEntryId'] > 0 ? true : false),
-                    'elementCount' => $section['elementCount'],
+                    'elementCount' => count($entries),
                     'changefreq' => ($section['sitemapEntryId'] > 0 ? $section['changefreq'] : 'weekly'),
                     'priority' => ($section['sitemapEntryId'] > 0 ? $section['priority'] : 0.5),
                 ];
@@ -136,14 +158,15 @@ class SettingsController extends Controller
         $allCategories = $this->_createCategoryQuery()->all();
         $allCategoryStructures = [];
         if (is_array($allCategories)) {
-            // print_r($allSections);
             foreach ($allCategories as $category) {
+                $entries = $this->getCurrentRevision($category['id']);
+
                 $allCategoryStructures[] = [
                     'id' => $category['id'],
                     'type' => 'category',
                     'heading' => $category['name'],
                     'enabled' => ($category['sitemapEntryId'] > 0 ? true : false),
-                    'elementCount' => $category['elementCount'],
+                    'elementCount' => count($entries),
                     'changefreq' => ($category['sitemapEntryId'] > 0 ? $category['changefreq'] : 'weekly'),
                     'priority' => ($category['sitemapEntryId'] > 0 ? $category['priority'] : 0.5),
                 ];
@@ -164,60 +187,54 @@ class SettingsController extends Controller
     /**
      * Called when saving the settings.
      *
-     * @throws \Throwable
-     * @throws \yii\base\ErrorException
-     * @throws \yii\base\Exception
-     * @throws \yii\base\NotSupportedException
-     * @throws \yii\db\StaleObjectException
-     * @throws \yii\web\BadRequestHttpException
-     * @throws \yii\web\ForbiddenHttpException
-     * @throws \yii\web\ServerErrorHttpException
-     * @return \Craft\web\Response
+     * @return Response
      */
     public function actionSaveSitemap(): craft\web\Response
     {
         $this->requirePostRequest();
         $this->requireAdmin();
+        
         $request = Craft::$app->getRequest();
         // @TODO: check the input and save the sections
         $sitemapSections = $request->getBodyParam('sitemapSections');
         // filter the enabled sections
         $allSectionIds = [];
-
-        $siteMapService = Sitemap::getInstance()->getSiteMap();
-
+        
         if (is_array($sitemapSections)) {
+            
             foreach ($sitemapSections as $key => $entry) {
+
                 if ($entry['enabled']) {
                     // filter section id from key
-
                     $id = (int)str_replace('id:', '', $key);
+                    
                     if ($id > 0) {
                         // find the entry, else add one
                         $sitemapEntry = SitemapEntry::find()->where(['linkId' => $id, 'type' => 'section'])->one();
+                        
                         if (!$sitemapEntry) {
                             // insert / update this section
                             $sitemapEntry = new SitemapEntry();
                         }
+                        
                         $sitemapEntry->linkId = $id;
                         $sitemapEntry->type = 'section';
                         $sitemapEntry->priority = $entry['priority'];
                         $sitemapEntry->changefreq = $entry['changefreq'];
-                        $siteMapService->saveEntry($sitemapEntry);
-                        $allSectionIds[] = $id;
+                        $sitemapEntry->save();
+                        
+                        array_push($allSectionIds, $id);
                     }
                 }
             }
         }
         // remove all sitemaps not in the id list
         if(count($allSectionIds) == 0) {
-            $records = SitemapEntry::findAll(['type' => 'section']);
-            foreach ($records as $record){
-                $siteMapService->deleteEntry($record);
-            }
+            SitemapEntry::deleteAll(['type' => 'section']);
         } else {
+            
             foreach (SitemapEntry::find()->where(['type' => 'section'])->andWhere(['NOT IN','linkId',$allSectionIds])->all() as $entry) {
-                $siteMapService->deleteEntry($entry);
+                $entry->delete();
             }
         }
 
@@ -242,24 +259,22 @@ class SettingsController extends Controller
                         $sitemapEntry->type = 'category';
                         $sitemapEntry->priority = $entry['priority'];
                         $sitemapEntry->changefreq = $entry['changefreq'];
-                        $siteMapService->saveEntry($sitemapEntry);
-                        $allCategoryIds[] = $id;
+                        $sitemapEntry->save();
+                        array_push($allCategoryIds, $id);
                     }
                 }
             }
         }
         // remove all sitemaps not in the id list
         if(count($allCategoryIds) == 0) {
-            $entries = SitemapEntry::findAll(['type' => 'category']);
-            foreach ($entries as $entry){
-                $siteMapService->deleteEntry($entry);
-            }
+            SitemapEntry::deleteAll(['type' => 'category']);
         } else {
             foreach (SitemapEntry::find()->where(['type' => 'category'])->andWhere(['NOT IN','linkId',$allCategoryIds])->all() as $entry) {
-                $siteMapService->deleteEntry($entry);
+                $entry->delete();
             }
         }
-
         return $this->actionIndex();
+
     }
+
 }

@@ -19,6 +19,7 @@ use Craft;
 use craft\db\Query;
 use craft\web\Controller;
 use craft\helpers\UrlHelper;
+use craft\elements\Entry;
 
 use Jaybizzle\CrawlerDetect\CrawlerDetect;
 
@@ -63,6 +64,12 @@ class SitemapController extends Controller
         return null;
     }
 
+    private function isCurrentRevision($entryId) {
+        return $entry = Entry::find()->id($entryId)
+                    ->anyStatus()
+                    ->exists();
+    }
+
     /**
      * Handle a request going to our plugin's index action URL,
      * e.g.: actions/sitemap/default
@@ -71,7 +78,6 @@ class SitemapController extends Controller
      */
     public function actionIndex()
     {
-
         try {
             // try to register the searchengine visit
             $CrawlerDetect = new CrawlerDetect;
@@ -102,9 +108,13 @@ class SitemapController extends Controller
         $dom->appendChild($urlset);
 
         foreach($this->_createEntrySectionQuery()->all() as $item) {
+
             $loc = $this->getUrl($item['uri'], $item['siteId']);
+            
             if($loc === null) continue;
 
+            if (!$this->isCurrentRevision($item['elementId'])) continue;
+            
             $url = $dom->createElement('url');
             $urlset->appendChild($url);
             $url->appendChild($dom->createElement('loc', $loc));
@@ -131,7 +141,10 @@ class SitemapController extends Controller
 
         foreach($this->_createEntryCategoryQuery()->all() as $item) {
             $loc = $this->getUrl($item['uri'], $item['siteId']);
-            if($loc === null) continue;
+            
+            if ($loc === null) continue;
+
+            if (!$this->isCurrentRevision($item['elementId'])) continue;
 
             $url = $dom->createElement('url');
             $urlset->appendChild($url);
@@ -165,7 +178,7 @@ class SitemapController extends Controller
                 'elements.id elementId',
                 'alternateLinkCount' => $subQuery,
 
-
+                
             ])
             ->from(['{{%sections}} sections'])
             ->innerJoin('{{%dolphiq_sitemap_entries}} sitemap_entries', '[[sections.id]] = [[sitemap_entries.linkId]] AND [[sitemap_entries.type]] = "section"')
@@ -175,7 +188,7 @@ class SitemapController extends Controller
             ->innerJoin('{{%elements}} elements', '[[entries.id]] = [[elements.id]] AND [[elements.enabled]] = 1')
             ->innerJoin('{{%elements_sites}} elements_sites', '[[elements_sites.elementId]] = [[elements.id]] AND [[elements_sites.enabled]] = 1')
             ->innerJoin('{{%sites}} sites', '[[elements_sites.siteId]] = [[sites.id]]')
-            ->andWhere(['elements.dateDeleted' => null])
+
             ->groupBy(['elements_sites.id']);
     }
 
@@ -212,7 +225,6 @@ class SitemapController extends Controller
             ->innerJoin('{{%elements}} elements', '[[elements.id]] = [[categories.id]] AND [[elements.enabled]] = 1')
             ->innerJoin('{{%elements_sites}} elements_sites', '[[elements_sites.elementId]] = [[elements.id]] AND [[elements_sites.enabled]] = 1')
             ->innerJoin('{{%sites}} sites', '[[elements_sites.siteId]] = [[sites.id]]')
-            ->andWhere(['elements.dateDeleted' => null])
             ->groupBy(['elements_sites.id']);
     }
 
